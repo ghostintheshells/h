@@ -36,23 +36,48 @@ class TestUnblacklistedUsername(object):
 
 @pytest.mark.usefixtures("user_model")
 class TestUniqueEmail(object):
-    def test_it_looks_up_user_by_email(self, dummy_node, pyramid_request, user_model):
+    @pytest.mark.parametrize(
+        "unique_email", [schemas.unique_email, schemas.unique_email_change]
+    )
+    def test_it_looks_up_user_by_email(
+        self, dummy_node, pyramid_request, user_model, unique_email
+    ):
         with pytest.raises(colander.Invalid):
-            schemas.unique_email(dummy_node, "foo@bar.com")
+            unique_email(dummy_node, "foo@bar.com")
 
         user_model.get_by_email.assert_called_with(
             pyramid_request.db, "foo@bar.com", pyramid_request.default_authority
         )
 
-    def test_it_is_invalid_when_user_exists(self, dummy_node):
+    @pytest.mark.parametrize(
+        "unique_email", [schemas.unique_email, schemas.unique_email_change]
+    )
+    def test_it_is_invalid_when_user_exists(self, dummy_node, unique_email):
         pytest.raises(colander.Invalid, schemas.unique_email, dummy_node, "foo@bar.com")
 
-    def test_it_is_valid_when_user_does_not_exist(self, dummy_node, user_model):
+    @pytest.mark.parametrize(
+        "unique_email", [schemas.unique_email, schemas.unique_email_change]
+    )
+    def test_it_is_valid_when_user_does_not_exist(
+        self, dummy_node, user_model, unique_email
+    ):
         user_model.get_by_email.return_value = None
 
-        assert schemas.unique_email(dummy_node, "foo@bar.com") is None
+        assert unique_email(dummy_node, "foo@bar.com") is None
 
-    def test_it_is_valid_when_authorized_users_email(
+    def test_it_is_not_valid_when_authorized_users_email_when_signing_up(
+        self, dummy_node, pyramid_config, user_model
+    ):
+        pyramid_config.testing_securitypolicy("acct:elliot@hypothes.is")
+        user_model.get_by_email.return_value = Mock(
+            spec_set=("userid",), userid="acct:elliot@hypothes.is"
+        )
+
+        pytest.raises(
+            colander.Invalid, schemas.unique_email, dummy_node, "elliot@bar.com"
+        )
+
+    def test_it_is_valid_when_authorized_users_email_when_changing_email(
         self, dummy_node, pyramid_config, user_model
     ):
         """
@@ -68,7 +93,7 @@ class TestUniqueEmail(object):
             spec_set=("userid",), userid="acct:elliot@hypothes.is"
         )
 
-        schemas.unique_email(dummy_node, "elliot@bar.com")
+        schemas.unique_email_change(dummy_node, "elliot@bar.com")
 
 
 @pytest.mark.usefixtures("user_model")

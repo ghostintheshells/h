@@ -40,13 +40,20 @@ def get_blacklist():
     return USERNAME_BLACKLIST
 
 
-def unique_email(node, value):
+def unique_email(node, value, same_email_ok=False):
     """Colander validator that ensures no user with this email exists."""
     request = node.bindings["request"]
     user = models.User.get_by_email(request.db, value, request.default_authority)
-    if user and user.userid != request.authenticated_userid:
+    if user and user.userid:
+        if same_email_ok and user.userid == request.authenticated_userid:
+            return
         msg = _("Sorry, an account with this email address already exists.")
         raise colander.Invalid(node, msg)
+
+
+def unique_email_change(node, value):
+    """Colander validator that ensures no user with this email exists except for the currently authorized user."""
+    unique_email(node, value, same_email_ok=True)
 
 
 def unique_username(node, value):
@@ -64,6 +71,20 @@ def email_node(**kwargs):
         colander.String(),
         validator=colander.All(
             validators.Length(max=EMAIL_MAX_LENGTH), validators.Email(), unique_email
+        ),
+        widget=deform.widget.TextInputWidget(template="emailinput"),
+        **kwargs
+    )
+
+
+def email_change_node(**kwargs):
+    """Return a Colander schema node for an existing user changing their email."""
+    return colander.SchemaNode(
+        colander.String(),
+        validator=colander.All(
+            validators.Length(max=EMAIL_MAX_LENGTH),
+            validators.Email(),
+            unique_email_change,
         ),
         widget=deform.widget.TextInputWidget(template="emailinput"),
         **kwargs
@@ -165,7 +186,7 @@ class RegisterSchema(CSRFSchema):
 
 
 class EmailChangeSchema(CSRFSchema):
-    email = email_node(title=_("Email address"))
+    email = email_change_node(title=_("Email address"))
     # No validators: all validation is done on the email field
     password = password_node(title=_("Confirm password"), hide_until_form_active=True)
 
